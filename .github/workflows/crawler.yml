@@ -1,0 +1,64 @@
+name: Hot News Crawler
+
+on:
+  # 手动触发
+  workflow_dispatch:
+
+  # 定时触发：每天 1 次
+  # 注意：这里是 UTC 时间，例：16 点 UTC ≈ 北京时间 24 点
+  schedule:
+    - cron: "0 16 * * *"
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run TrendRadar crawler
+        env:
+          # 下面这些按你需要的推送渠道来填，没用到的可以删掉或者留空
+          WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python main.py
+
+      - name: Delete old history (keep only 7 days)
+        run: |
+          # 删除 7 天前的文件
+          find output -type f -mtime +7 -exec rm {} \; || true
+          # 删除已经空了的目录
+          find output -type d -empty -delete || true
+
+      - name: Commit and push if changed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add output || true
+
+          # 如果没有变更，git diff --cached 会是空的，就直接退出
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          commit_msg="chore: update hot news $(date '+%Y-%m-%d %H:%M:%S')"
+          git commit -m "$commit_msg"
+          git push
